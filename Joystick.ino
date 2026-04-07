@@ -1,58 +1,137 @@
-// Joystick pins
-const int JoyX = A0;
-const int JoyY = A1;
+// ==========================================
+// Beroepsproject: The Navigator - EBSY
+// Student: Alireza Oftadeh (92143)
+// ==========================================
 
-// Button pin
-const int buttonPin = 2;
+#include "ArduinoGraphics.h"
+#include "Arduino_LED_Matrix.h"
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
-// LED pin
-const int ledPin = 13;
+ArduinoLEDMatrix matrix;
+LiquidCrystal_I2C lcd(0x27, 16, 2); 
 
-// Variables
-int joyXValue = 0;
-int joyYValue = 0;
+const int pinJoyKnop = A0; 
+const int pinJoyY    = A1; 
+const int pinJoyX    = A2; 
 
-bool buttonPressed = false;
-bool cheatMode = false;
+bool startFase = true; 
 
-void setup() 
-{
-  Serial.begin(9600); // Start serial communication
+void setup() {
+  Serial.begin(9600); 
+  matrix.begin();
 
-  pinMode(buttonPin, INPUT_PULLUP); // Button
-  pinMode(ledPin, OUTPUT);          // LED
+  lcd.init(); 
+  lcd.backlight(); 
+  
+  lcd.setCursor(0, 0);
+  lcd.print("92143 Alireza");
+  lcd.setCursor(0, 1);
+  lcd.print("Oftadeh - BP03");
+
+  pinMode(pinJoyKnop, INPUT_PULLUP);
 }
 
-void loop() 
-{
-  // Read joystick
-  joyXValue = analogRead(JoyX);
-  joyYValue = analogRead(JoyY);
+void loop() {
+  if (startFase == true) {
+    toonNaamOpMatrix(); 
+    
+    // Controleer de joystick knop (zonder vertraging!)
+    if (digitalRead(pinJoyKnop) == LOW) {
+      startFase = false; 
+      matrix.clear();    
+      lcd.clear();       
+      delay(300); // Korte pauze om te voorkomen dat je de klik vasthoudt
+    }
+  } 
+  else {
+    leesEnToonJoystick(); 
+  }
+}
 
-  // Read button (LOW = pressed)
-  buttonPressed = (digitalRead(buttonPin) == LOW);
+void toonNaamOpMatrix() {
+  matrix.beginDraw();
+  matrix.stroke(0xFFFFFFFF);
+  matrix.textScrollSpeed(60); 
+  matrix.textFont(Font_5x7);
+  matrix.beginText(0, 1, 0xFFFFFF);
+  
+  matrix.println(" 92143 Alireza Oftadeh - BP03 "); 
+  
+  matrix.endText(SCROLL_LEFT);
+  matrix.endDraw(); 
+}
 
-  // Check if joystick is centered
-  bool joystickCentered = (joyXValue > 400 && joyXValue < 600 &&
-                           joyYValue > 400 && joyYValue < 600);
+void leesEnToonJoystick() {
+  int waardeX = analogRead(pinJoyX);
+  int waardeY = analogRead(pinJoyY);
 
-  // Cheat mode = button + joystick center
-  cheatMode = buttonPressed && joystickCentered;
+  String richting = "Midden"; 
+  int percentage = 0;
 
-  // LED ON when shooting or cheat mode
-  if (buttonPressed || cheatMode)
-    digitalWrite(ledPin, HIGH);
-  else
-    digitalWrite(ledPin, LOW);
+  // We bepalen eerst hoe ver elke as uit het absolute midden (512) is.
+  // We gebruiken abs() zodat het altijd een positief getal is.
+  int uitslagX = abs(waardeX - 512);
+  int uitslagY = abs(waardeY - 512);
 
-  // Send data to C#
-  Serial.print(joyXValue);
-  Serial.print(",");
-  Serial.print(joyYValue);
-  Serial.print(",");
-  Serial.print(buttonPressed);
-  Serial.print(",");
-  Serial.println(cheatMode);
+  // We negeren kleine bewegingen (deadzone). Alles onder uitslag 80 is 'Midden'.
+  if (uitslagX < 80 && uitslagY < 80) {
+    richting = "Midden";
+    percentage = 0;
+  } 
+  else {
+    // Welke as is het verst geduwd?
+    if (uitslagY > uitslagX) {
+      // Y-as wint (Up of Down)
+      if (waardeY < 400) { // Duw je naar boven?
+        richting = "Up";
+        // Map de waarde (van rand deadzone 400, naar theoretisch uiterste 0)
+        percentage = map(waardeY, 400, 0, 0, 100); 
+      } 
+      else if (waardeY > 600) { // Duw je naar beneden?
+        richting = "Down";
+        percentage = map(waardeY, 600, 1023, 0, 100);
+      }
+    } 
+    else {
+      // X-as wint (Left of Right)
+      if (waardeX < 400) { // Duw je naar links?
+        richting = "Left";
+        percentage = map(waardeX, 400, 0, 0, 100);
+      } 
+      else if (waardeX > 600) { // Duw je naar rechts?
+        richting = "Right";
+        percentage = map(waardeX, 600, 1023, 0, 100);
+      }
+    }
+  }
 
-  delay(100);
+  // Beveiliging: percentage mag nooit negatief of boven 100 zijn.
+  if (percentage < 0) percentage = 0;
+  if (percentage > 100) percentage = 100;
+
+  // --- Printen naar Serial Monitor ---
+  if (richting == "Midden") {
+    Serial.println("Midden");
+  } else {
+    Serial.print(richting);
+    Serial.print(" ");
+    Serial.print(percentage);
+    Serial.println("%");
+  }
+
+  // --- Printen naar LCD Monitor ---
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  
+  if (richting == "Midden") {
+    lcd.print("Midden");
+  } else {
+    lcd.print(richting);
+    lcd.print(" ");
+    lcd.print(percentage);
+    lcd.print("%");
+  }
+
+  delay(150); // Iets snellere update voor een soepeler gevoel
 }
